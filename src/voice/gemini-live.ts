@@ -121,7 +121,11 @@ function resetOutput(conversation: VoiceConversation): void {
 }
 
 function getOutputStream(conversation: VoiceConversation): PassThrough {
-  if (conversation.outputStream && !conversation.outputStream.destroyed) {
+  if (
+    conversation.outputStream &&
+    !conversation.outputStream.destroyed &&
+    !conversation.outputStream.writableEnded
+  ) {
     return conversation.outputStream;
   }
   const stream = new PassThrough({ highWaterMark: 2 * 1024 * 1024 });
@@ -142,6 +146,13 @@ function handleGeminiMessage(conversation: VoiceConversation, message: LiveServe
     if (!encoded) continue;
     const pcm = pcm24MonoTo48Stereo(Buffer.from(encoded, "base64"));
     if (pcm.length) getOutputStream(conversation).write(pcm);
+  }
+  if (
+    (message.serverContent?.generationComplete || message.serverContent?.turnComplete) &&
+    conversation.outputStream &&
+    !conversation.outputStream.writableEnded
+  ) {
+    conversation.outputStream.end();
   }
 }
 
@@ -281,6 +292,9 @@ export async function startGeminiConversation(options: {
     conversation.session = await ai.live.connect({
       model: options.model,
       callbacks: {
+        onopen: () => {
+          console.log(`[GEMINI] Sesión Live abierta para el servidor ${options.guild.id}.`);
+        },
         onmessage: (message) => handleGeminiMessage(conversation, message),
         onerror: (event) => {
           void reportImportantError(
@@ -290,8 +304,16 @@ export async function startGeminiConversation(options: {
             options.guild.id,
           );
         },
-        onclose: () => {
-          if (!conversation.closing) void stopGeminiConversation(options.guild.id);
+        onclose: (event) => {
+          console.warn(
+            `[GEMINI] Sesión Live cerrada en ${options.guild.id}: código ${event.code}, ${event.reason || "sin motivo"}.`,
+          );
+          if (!conversation.closing) {
+            void sendNotice(
+              conversation,
+              "La conversación de Gemini Live se cerró. Usa `/hablar conectar` para iniciar otra sesión.",
+            ).finally(() => stopGeminiConversation(options.guild.id));
+          }
         },
       },
       config: {
@@ -314,7 +336,13 @@ export async function startGeminiConversation(options: {
     });
     connection.receiver.speaking.on("start", (userId) => subscribeToSpeaker(conversation, userId));
     player.on(AudioPlayerStatus.Idle, () => {
-      if (conversation.outputStream?.readableEnded) conversation.outputStream = null;
+      if (
+        conversation.outputStream?.readableEnded ||
+        conversation.outputStream?.writableEnded ||
+        conversation.outputStream?.destroyed
+      ) {
+        conversation.outputStream = null;
+      }
     });
     conversation.limitTimer = setTimeout(() => {
       void sendNotice(
