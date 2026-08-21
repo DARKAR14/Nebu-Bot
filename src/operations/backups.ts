@@ -13,6 +13,7 @@ const BACKUP_COLLECTIONS = [
   "commission_reviews",
   "guild_counters",
   "bot_settings",
+  "birthdays",
 ] as const;
 
 export async function createAndSendGuildBackup(guild: Guild): Promise<boolean> {

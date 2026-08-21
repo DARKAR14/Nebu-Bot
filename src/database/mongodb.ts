@@ -157,6 +157,15 @@ export async function connectDatabase(uri: string, databaseName: string): Promis
       { guildId: 1, userId: 1 },
       { unique: true },
     ),
+    database.collection("birthdays").createIndex(
+      { guildId: 1, userId: 1 },
+      { unique: true },
+    ),
+    database.collection("birthdays").createIndex({ guildId: 1, month: 1, day: 1 }),
+    database.collection("birthday_announcements").createIndex(
+      { createdAt: 1 },
+      { expireAfterSeconds: 400 * 24 * 60 * 60 },
+    ),
   ]);
   console.log(`[MONGODB] Conectado a la base de datos ${databaseName}.`);
 }

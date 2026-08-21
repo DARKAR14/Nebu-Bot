@@ -6,6 +6,13 @@ export interface GuildSettings {
   errorChannelId?: string;
   backupChannelId?: string;
   ticketCategoryId?: string;
+  birthdayChannelId?: string;
+  birthdayEmbed?: {
+    title: string;
+    message: string;
+    imageUrl: string;
+    color: number;
+  };
   lastBackupAt?: Date;
 }
 

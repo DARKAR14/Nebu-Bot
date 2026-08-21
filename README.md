@@ -181,6 +181,29 @@ El bot necesita `Manage Server` para administrar reglas AutoMod. Los límites de
 - `/avatar [usuario]`: avatar en máxima resolución disponible.
 - `/help`: muestra únicamente las categorías que el usuario puede ejecutar.
 
+## Cumpleaños
+
+El sistema guarda únicamente el mes y el día en MongoDB; no almacena el año de nacimiento ni calcula la edad. Los miembros usan:
+
+```text
+/cumpleanos lista
+/cumpleanos crear mes:<1-12> dia:<1-31>
+/cumpleanos eliminar
+```
+
+`lista` muestra públicamente los cumpleaños del mes actual. `crear` registra o actualiza la fecha de quien ejecuta el comando y `eliminar` borra solamente su propio registro.
+
+Un administrador con `Manage Server`, o el dueño configurado en `DEVELOPER_USER_ID`, prepara los anuncios con:
+
+```text
+/cumpleanos channel canal:#cumpleaños
+/cumpleanos embed titulo:<texto> mensaje:<texto> imagen:<URL> [color:#190c05]
+```
+
+El título y el mensaje admiten `{usuario}`, `{mencion}` y `{servidor}`. El bot comprueba cada minuto la fecha de `America/Bogota`, publica una sola vez por persona y día, incluye su avatar y la imagen configurada, y evita duplicados aunque el proceso se reinicie. Los cumpleaños del 29 de febrero se anuncian el 28 en años no bisiestos.
+
+Discord aplica la visibilidad al comando principal completo, no a cada subcomando. Por eso `channel` y `embed` pueden aparecer en el menú público, pero el bot rechaza su ejecución si la persona no tiene permisos administrativos.
+
 ## Conversación de voz con Gemini Live
 
 `/hablar conectar` une a Nebu al canal de voz normal donde se encuentra el usuario. El bot recibe el audio Opus de Discord, lo convierte a PCM de 16 bits/16 kHz para Gemini Live y reproduce en Discord la respuesta nativa de voz. El modelo predeterminado es `gemini-3.1-flash-live-preview` y la voz configurada es `Puck`, guiada para sonar masculina, juvenil y enérgica.

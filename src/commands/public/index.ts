@@ -9,6 +9,7 @@ import { helpCommand } from "./help.js";
 import { hablarCommand } from "./hablar.js";
 import { serverinfoCommand } from "./serverinfo.js";
 import { userinfoCommand } from "./userinfo.js";
+import { cumpleanosCommand } from "./cumpleanos.js";
 
 // Agrega aquí comandos disponibles para todos los miembros.
 export const publicCommands: readonly BotCommand[] = [
@@ -22,4 +23,5 @@ export const publicCommands: readonly BotCommand[] = [
   avatarCommand,
   helpCommand,
   hablarCommand,
+  cumpleanosCommand,
 ];

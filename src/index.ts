@@ -18,6 +18,7 @@ import {
 import { startBackupScheduler } from "./operations/backups.js";
 import { reportImportantError } from "./operations/errors.js";
 import { stopAllGeminiConversations } from "./voice/gemini-live.js";
+import { startBirthdayScheduler } from "./birthdays/scheduler.js";
 import {
   startHealthServer,
   startSelfPing,
@@ -42,6 +43,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   if (storedPresence) applyPresence(readyClient, storedPresence);
   printCommandTables();
   startBackupScheduler(readyClient);
+  startBirthdayScheduler(readyClient);
 
   const results = await Promise.allSettled(
     readyClient.guilds.cache.map((guild) => syncGuildCommands(guild)),
