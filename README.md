@@ -187,7 +187,7 @@ El bot necesita `Manage Server` para administrar reglas AutoMod. Los límites de
 
 Nebu interpreta a un ser cósmico que aparenta unos 12 años: curioso, amable y con amplios conocimientos de ciencia, astronomía, historia, tecnología, videojuegos, arte y cultura. Explica ideas complejas de manera sencilla, reconoce cuando no sabe algo y evita inventar respuestas. Como Gemini utiliza voces predefinidas, la edad de la voz es una aproximación de estilo y no una reproducción exacta.
 
-`Nebu` es la palabra de activación. La petición debe comenzar llamándolo por su nombre, por ejemplo: “Hey Nebu”, “Hola Nebu” u “Oye Nebu”. Cada pregunta nueva debe volver a incluir el nombre. La respuesta no se interrumpe si otra persona comienza a hablar, de modo que Nebu pueda terminar su idea. La detección es semántica y la realiza Gemini, por lo que el audio continúa enviándose temporalmente mientras la sesión está conectada y pueden ocurrir falsos positivos o negativos ocasionales.
+`Nebu` es la palabra de activación. La petición debe comenzar llamándolo por su nombre, por ejemplo: “Hey Nebu”, “Hola Nebu” u “Oye Nebu”. Cada pregunta nueva debe volver a incluir el nombre. La transcripción de entrada de Gemini se usa como compuerta: si la frase no comienza con la activación, cualquier audio que el modelo intente generar se descarta. La transcripción solo permanece en memoria durante el turno, no se imprime ni se guarda. Nebu responde directamente, sin repetir su nombre ni la frase de activación.
 
 ```text
 /hablar conectar
@@ -195,7 +195,7 @@ Nebu interpreta a un ser cósmico que aparenta unos 12 años: curioso, amable y 
 /hablar desconectar
 ```
 
-La conversación desactiva las interrupciones automáticas: cuando una persona empieza a hablar mientras Nebu responde, el audio pendiente no se descarta. Una sola sesión puede estar activa por servidor y termina automáticamente a los 14 minutos para permanecer por debajo del límite de una sesión de audio Live. El audio se transmite temporalmente a Google y no se guarda en MongoDB, Cloudinary ni archivos locales; al conectarse, el bot publica este aviso en el canal de texto.
+La conversación desactiva las interrupciones automáticas: cuando una persona empieza a hablar mientras Nebu responde, el audio pendiente no se descarta. Una sola sesión puede estar activa por servidor y termina automáticamente a los 60 minutos por seguridad. El bot conserva el token de reanudación de Gemini, atiende las señales `GoAway` y reemplaza la conexión periódica sin abandonar el canal de Discord; también utiliza compresión de contexto. El audio se transmite temporalmente a Google y no se guarda en MongoDB, Cloudinary ni archivos locales; al conectarse, el bot publica este aviso en el canal de texto.
 
 El bot necesita `Connect` y `Speak` en el canal de voz. `GEMINI_API_KEY` permanece únicamente en el servidor de Render y nunca se envía a Discord. El uso está sujeto a la cuota y facturación configuradas en la cuenta de Gemini API.
 

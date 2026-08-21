@@ -118,7 +118,7 @@ export const hablarCommand: BotCommand = {
       .setTitle("Nebu está escuchando")
       .setDescription(
         `Me conecté a ${voiceChannel}. Para hablar conmigo, incluyan mi nombre en cada intervención: **“Hey Nebu”**, **“Hola Nebu”** u **“Oye Nebu”**. Si no dicen **Nebu**, permaneceré en silencio.\n\n` +
-          "El audio del canal se procesa temporalmente mediante **Google Gemini Live** y no se guarda en MongoDB ni Cloudinary. La sesión termina automáticamente después de 14 minutos.",
+          "El audio del canal se procesa temporalmente mediante **Google Gemini Live** y no se guarda en MongoDB ni Cloudinary. La sesión termina automáticamente después de 60 minutos.",
       )
       .addFields({ name: "Finalizar", value: "Usa `/hablar desconectar`." })
       .setTimestamp();

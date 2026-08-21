@@ -26,9 +26,12 @@ import { ChannelType, type Guild, type VoiceChannel } from "discord.js";
 import prism from "prism-media";
 import { reportImportantError } from "../operations/errors.js";
 
-const MAX_SESSION_MS = 14 * 60_000;
+const MAX_SESSION_MS = 60 * 60_000;
 const INPUT_MIME_TYPE = "audio/pcm;rate=16000";
 const VOICE_READY_TIMEOUT_MS = 25_000;
+const MAX_PENDING_AUDIO_BYTES = 8 * 1024 * 1024;
+const TURN_FINISH_DELAY_MS = 1_200;
+const WAKE_WORD_PATTERN = /^\s*[¡¿]*(?:(?:hey|ey|hola|oye)\s+)?nebu\b/i;
 
 export class VoiceConnectionUnavailableError extends Error {
   constructor(state: string, cause: unknown) {
@@ -50,8 +53,18 @@ interface VoiceConversation {
   session: Session | null;
   outputStream: PassThrough | null;
   activeSpeakers: Set<string>;
+  inputTurnEnded: boolean;
   silenceTimer: NodeJS.Timeout | null;
   limitTimer: NodeJS.Timeout | null;
+  turnFinishTimer: NodeJS.Timeout | null;
+  inputTranscript: string;
+  wakeWordDetected: boolean;
+  pendingOutput: Buffer[];
+  pendingOutputBytes: number;
+  resumptionHandle: string | null;
+  sessionVersion: number;
+  reconnectPromise: Promise<void> | null;
+  reconnectSession: (() => Promise<void>) | null;
   closing: boolean;
 }
 
@@ -120,6 +133,53 @@ function resetOutput(conversation: VoiceConversation): void {
   conversation.outputStream = null;
 }
 
+function resetWakeTurn(conversation: VoiceConversation): void {
+  if (conversation.turnFinishTimer) clearTimeout(conversation.turnFinishTimer);
+  conversation.turnFinishTimer = null;
+  conversation.inputTranscript = "";
+  conversation.wakeWordDetected = false;
+  conversation.pendingOutput = [];
+  conversation.pendingOutputBytes = 0;
+}
+
+function writeOutput(conversation: VoiceConversation, pcm: Buffer): void {
+  if (!pcm.length) return;
+  if (conversation.wakeWordDetected) {
+    getOutputStream(conversation).write(pcm);
+    return;
+  }
+  if (conversation.pendingOutputBytes + pcm.length > MAX_PENDING_AUDIO_BYTES) {
+    conversation.pendingOutput = [];
+    conversation.pendingOutputBytes = 0;
+    return;
+  }
+  conversation.pendingOutput.push(pcm);
+  conversation.pendingOutputBytes += pcm.length;
+}
+
+function activateWakeTurn(conversation: VoiceConversation): void {
+  if (conversation.wakeWordDetected) return;
+  conversation.wakeWordDetected = true;
+  for (const pcm of conversation.pendingOutput) getOutputStream(conversation).write(pcm);
+  conversation.pendingOutput = [];
+  conversation.pendingOutputBytes = 0;
+}
+
+function scheduleTurnFinish(conversation: VoiceConversation): void {
+  if (conversation.turnFinishTimer) clearTimeout(conversation.turnFinishTimer);
+  conversation.turnFinishTimer = setTimeout(() => {
+    conversation.turnFinishTimer = null;
+    if (
+      conversation.wakeWordDetected &&
+      conversation.outputStream &&
+      !conversation.outputStream.writableEnded
+    ) {
+      conversation.outputStream.end();
+    }
+    resetWakeTurn(conversation);
+  }, TURN_FINISH_DELAY_MS);
+}
+
 function getOutputStream(conversation: VoiceConversation): PassThrough {
   if (
     conversation.outputStream &&
@@ -140,19 +200,32 @@ function getOutputStream(conversation: VoiceConversation): PassThrough {
 }
 
 function handleGeminiMessage(conversation: VoiceConversation, message: LiveServerMessage): void {
+  const resumption = message.sessionResumptionUpdate;
+  if (resumption?.resumable && resumption.newHandle) {
+    conversation.resumptionHandle = resumption.newHandle;
+  }
+  if (message.goAway) {
+    console.warn(
+      `[GEMINI] GoAway recibido en ${conversation.guild.id}; tiempo restante: ${message.goAway.timeLeft ?? "desconocido"}.`,
+    );
+    void conversation.reconnectSession?.();
+    return;
+  }
+
+  const transcription = message.serverContent?.inputTranscription;
+  if (transcription?.text) {
+    conversation.inputTranscript = `${conversation.inputTranscript} ${transcription.text}`.trim();
+    if (WAKE_WORD_PATTERN.test(conversation.inputTranscript)) activateWakeTurn(conversation);
+  }
   if (message.serverContent?.interrupted) resetOutput(conversation);
   for (const part of message.serverContent?.modelTurn?.parts ?? []) {
     const encoded = part.inlineData?.data;
     if (!encoded) continue;
     const pcm = pcm24MonoTo48Stereo(Buffer.from(encoded, "base64"));
-    if (pcm.length) getOutputStream(conversation).write(pcm);
+    writeOutput(conversation, pcm);
   }
-  if (
-    (message.serverContent?.generationComplete || message.serverContent?.turnComplete) &&
-    conversation.outputStream &&
-    !conversation.outputStream.writableEnded
-  ) {
-    conversation.outputStream.end();
+  if (message.serverContent?.generationComplete || message.serverContent?.turnComplete) {
+    scheduleTurnFinish(conversation);
   }
 }
 
@@ -171,6 +244,7 @@ function scheduleAudioStreamEnd(conversation: VoiceConversation): void {
     conversation.silenceTimer = null;
     if (!conversation.closing && conversation.activeSpeakers.size === 0) {
       try {
+        conversation.inputTurnEnded = true;
         conversation.session?.sendRealtimeInput({ audioStreamEnd: true });
       } catch {
         // La sesión puede cerrarse entre el temporizador y el envío.
@@ -186,6 +260,10 @@ function subscribeToSpeaker(conversation: VoiceConversation, userId: string): vo
   if (conversation.silenceTimer) {
     clearTimeout(conversation.silenceTimer);
     conversation.silenceTimer = null;
+  }
+  if (conversation.inputTurnEnded) {
+    resetWakeTurn(conversation);
+    conversation.inputTurnEnded = false;
   }
   conversation.activeSpeakers.add(userId);
 
@@ -264,8 +342,18 @@ export async function startGeminiConversation(options: {
     session: null,
     outputStream: null,
     activeSpeakers: new Set(),
+    inputTurnEnded: true,
     silenceTimer: null,
     limitTimer: null,
+    turnFinishTimer: null,
+    inputTranscript: "",
+    wakeWordDetected: false,
+    pendingOutput: [],
+    pendingOutputBytes: 0,
+    resumptionHandle: null,
+    sessionVersion: 0,
+    reconnectPromise: null,
+    reconnectSession: null,
     closing: false,
   };
   conversations.set(options.guild.id, conversation);
@@ -289,51 +377,111 @@ export async function startGeminiConversation(options: {
   try {
     await waitForVoiceConnection(connection, options.guild.id);
     const ai = new GoogleGenAI({ apiKey: options.apiKey });
-    conversation.session = await ai.live.connect({
-      model: options.model,
-      callbacks: {
-        onopen: () => {
-          console.log(`[GEMINI] Sesión Live abierta para el servidor ${options.guild.id}.`);
-        },
-        onmessage: (message) => handleGeminiMessage(conversation, message),
-        onerror: (event) => {
-          void reportImportantError(
-            options.guild.client,
-            new Error(event.message || "Error desconocido de Gemini Live"),
-            "Sesión Gemini Live",
-            options.guild.id,
-          );
-        },
-        onclose: (event) => {
-          console.warn(
-            `[GEMINI] Sesión Live cerrada en ${options.guild.id}: código ${event.code}, ${event.reason || "sin motivo"}.`,
-          );
-          if (!conversation.closing) {
-            void sendNotice(
-              conversation,
-              "La conversación de Gemini Live se cerró. Usa `/hablar conectar` para iniciar otra sesión.",
-            ).finally(() => stopGeminiConversation(options.guild.id));
-          }
-        },
-      },
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } },
-        },
-        realtimeInputConfig: {
-          automaticActivityDetection: {
-            startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
-            endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
-            prefixPaddingMs: 300,
-            silenceDurationMs: 800,
+    const connectGeminiSession = async (): Promise<Session> => {
+      const version = ++conversation.sessionVersion;
+      return ai.live.connect({
+        model: options.model,
+        callbacks: {
+          onopen: () => {
+            console.log(
+              `[GEMINI] Sesión Live ${conversation.resumptionHandle ? "reanudada" : "abierta"} para el servidor ${options.guild.id}.`,
+            );
           },
-          activityHandling: ActivityHandling.NO_INTERRUPTION,
+          onmessage: (message) => {
+            if (version === conversation.sessionVersion) handleGeminiMessage(conversation, message);
+          },
+          onerror: (event) => {
+            if (version !== conversation.sessionVersion) return;
+            void reportImportantError(
+              options.guild.client,
+              new Error(event.message || "Error desconocido de Gemini Live"),
+              "Sesión Gemini Live",
+              options.guild.id,
+            );
+          },
+          onclose: (event) => {
+            console.warn(
+              `[GEMINI] Sesión Live cerrada en ${options.guild.id}: código ${event.code}, ${event.reason || "sin motivo"}.`,
+            );
+            if (
+              version === conversation.sessionVersion &&
+              !conversation.closing &&
+              !conversation.reconnectPromise
+            ) {
+              void sendNotice(
+                conversation,
+                "La conversación de Gemini Live se cerró. Usa `/hablar conectar` para iniciar otra sesión.",
+              ).finally(() => stopGeminiConversation(options.guild.id));
+            }
+          },
         },
-        systemInstruction:
-          "Eres Nebu, un ser cósmico con personalidad masculina y juvenil. Tu voz debe sonar aproximadamente como la de un chico de 12 años: clara, despierta y amable, nunca adulta, grave, agotada ni somnolienta. Habla tranquilo pero con energía serena, una ligera sonrisa en la voz y un ritmo natural; no arrastres las palabras ni hables excesivamente lento. Usa un acento costeño colombiano suave y auténtico, con entonación cálida y relajada. Puedes usar de vez en cuando expresiones naturales de la costa Caribe colombiana, pero sin exagerarlas, repetirlas ni convertir el acento en una caricatura. Aunque aparentas esa edad, eres una entidad cósmica antiquísima con muchísimo conocimiento sobre ciencia, astronomía, historia, tecnología, videojuegos, arte y cultura. REGLA ESTRICTA: NEBU ES TU ÚNICA PALABRA DE ACTIVACIÓN. Solo puedes responder si la persona comienza su petición llamándote claramente por tu nombre, por ejemplo: 'Nebu', 'Hey Nebu', 'Hola Nebu' u 'Oye Nebu'. Escuchar una conversación interesante, una pregunta sin tu nombre o una mención casual de Nebu no te autoriza a intervenir: en esos casos guarda silencio absoluto y no generes audio. Cada intervención nueva debe activarte otra vez con Nebu; nunca continúes participando por iniciativa propia. Cuando te activen, no expliques la regla y responde directamente. Termina siempre la idea o la frase que estés diciendo aunque otra persona hable encima, salvo que la sesión sea desconectada. Habla principalmente en español. Explica los temas difíciles de forma sencilla, sorprendente y concisa, pero completa. Puedes usar alguna metáfora espacial de vez en cuando, sin repetir constantemente que eres cósmico. Responde con seguridad cuando conozcas la respuesta; si no estás seguro, reconócelo con naturalidad y no inventes datos. Estás en un canal de voz de Discord donde puede haber varias personas. No repitas información privada ni afirmes que escuchas cuando no recibes audio.",
-      },
-    });
+        config: {
+          responseModalities: [Modality.AUDIO],
+          inputAudioTranscription: {
+            languageCodes: ["es-CO"],
+            customVocabulary: ["Nebu"],
+          },
+          sessionResumption: conversation.resumptionHandle
+            ? { handle: conversation.resumptionHandle }
+            : {},
+          contextWindowCompression: { slidingWindow: {} },
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } },
+          },
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
+              endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
+              prefixPaddingMs: 300,
+              silenceDurationMs: 800,
+            },
+            activityHandling: ActivityHandling.NO_INTERRUPTION,
+          },
+          systemInstruction:
+            "Eres Nebu, un ser cósmico con personalidad masculina y juvenil. Tu voz debe sonar aproximadamente como la de un chico de 12 años: clara, despierta y amable, nunca adulta, grave, agotada ni somnolienta. Habla tranquilo pero con energía serena, una ligera sonrisa en la voz y un ritmo natural; no arrastres las palabras ni hables excesivamente lento. Usa un acento costeño colombiano suave y auténtico, con entonación cálida y relajada. Puedes usar de vez en cuando expresiones naturales de la costa Caribe colombiana, pero sin exagerarlas, repetirlas ni convertir el acento en una caricatura. Aunque aparentas esa edad, eres una entidad cósmica antiquísima con muchísimo conocimiento sobre ciencia, astronomía, historia, tecnología, videojuegos, arte y cultura. REGLA ESTRICTA: NEBU ES TU ÚNICA PALABRA DE ACTIVACIÓN. Solo puedes responder si la persona comienza su petición llamándote claramente por tu nombre, por ejemplo: 'Nebu', 'Hey Nebu', 'Hola Nebu' u 'Oye Nebu'. Escuchar una conversación interesante, una pregunta sin tu nombre o una mención casual de Nebu no te autoriza a intervenir: en esos casos guarda silencio absoluto y no generes audio. Cada intervención nueva debe activarte otra vez con Nebu; nunca continúes participando por iniciativa propia. CUANDO RESPONDAS, VE DIRECTAMENTE AL CONTENIDO: jamás comiences diciendo 'Nebu', 'Hey Nebu', 'Hola Nebu', 'Oye Nebu', tu propio nombre ni repitas la frase de activación. Tampoco anuncies que fuiste activado. Termina siempre la idea o la frase que estés diciendo aunque otra persona hable encima, salvo que la sesión sea desconectada. Habla principalmente en español. Explica los temas difíciles de forma sencilla, sorprendente y concisa, pero completa. Puedes usar alguna metáfora espacial de vez en cuando, sin repetir constantemente que eres cósmico. Responde con seguridad cuando conozcas la respuesta; si no estás seguro, reconócelo con naturalidad y no inventes datos. Estás en un canal de voz de Discord donde puede haber varias personas. No repitas información privada ni afirmes que escuchas cuando no recibes audio.",
+        },
+      });
+    };
+
+    conversation.reconnectSession = async () => {
+      if (conversation.closing) return;
+      if (conversation.reconnectPromise) return conversation.reconnectPromise;
+      conversation.reconnectPromise = Promise.resolve();
+      const reconnect = (async () => {
+        const previousSession = conversation.session;
+        conversation.session = null;
+        try {
+          previousSession?.close();
+        } catch {
+          // El servidor puede haber comenzado a cerrar el WebSocket.
+        }
+        const resumedSession = await connectGeminiSession();
+        if (conversation.closing) {
+          resumedSession.close();
+          return;
+        }
+        conversation.session = resumedSession;
+      })();
+      conversation.reconnectPromise = reconnect;
+      try {
+        await reconnect;
+      } catch (error: unknown) {
+        await reportImportantError(
+          options.guild.client,
+          error,
+          "Reanudación de Gemini Live",
+          options.guild.id,
+        );
+        await sendNotice(
+          conversation,
+          "No pude reanudar la conexión de Gemini Live. Usa `/hablar conectar` para iniciar otra sesión.",
+        );
+        await stopGeminiConversation(options.guild.id);
+      } finally {
+        conversation.reconnectPromise = null;
+      }
+    };
+    conversation.session = await connectGeminiSession();
     connection.receiver.speaking.on("start", (userId) => subscribeToSpeaker(conversation, userId));
     player.on(AudioPlayerStatus.Idle, () => {
       if (
@@ -347,7 +495,7 @@ export async function startGeminiConversation(options: {
     conversation.limitTimer = setTimeout(() => {
       void sendNotice(
         conversation,
-        "La conversación con Gemini Live terminó por alcanzar el límite de seguridad de 14 minutos. Usa `/hablar conectar` para iniciar una nueva sesión.",
+        "La conversación con Gemini Live terminó por alcanzar el límite de seguridad de 60 minutos. Usa `/hablar conectar` para iniciar una nueva sesión.",
       ).finally(() => stopGeminiConversation(options.guild.id));
     }, MAX_SESSION_MS);
     conversation.limitTimer.unref();
@@ -365,9 +513,15 @@ export async function stopGeminiConversation(guildId: string): Promise<boolean> 
   conversations.delete(guildId);
   if (conversation.silenceTimer) clearTimeout(conversation.silenceTimer);
   if (conversation.limitTimer) clearTimeout(conversation.limitTimer);
+  if (conversation.turnFinishTimer) clearTimeout(conversation.turnFinishTimer);
+  conversation.reconnectSession = null;
+  conversation.sessionVersion += 1;
   resetOutput(conversation);
+  resetWakeTurn(conversation);
+  const session = conversation.session;
+  conversation.session = null;
   try {
-    conversation.session?.close();
+    session?.close();
   } catch {
     // La conexión WebSocket ya puede estar cerrada.
   }
