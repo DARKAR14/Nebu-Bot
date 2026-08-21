@@ -97,18 +97,20 @@ export const hablarCommand: BotCommand = {
         model: context.config.geminiLiveModel,
       });
     } catch (error: unknown) {
-      if (!(error instanceof VoiceConnectionUnavailableError)) throw error;
-      await reportImportantError(
+      const voiceUnavailable = error instanceof VoiceConnectionUnavailableError;
+      await interaction.editReply({
+        content: voiceUnavailable
+          ? "No pude completar la conexión con el servidor de voz de Discord después de dos intentos. " +
+            "Vuelve a probar en unos segundos o cambia de canal/región de voz."
+          : "Pude entrar al canal, pero Gemini Live no consiguió iniciar la conversación. " +
+            "La conexión de voz se cerró de forma segura; revisa el registro de errores e inténtalo nuevamente.",
+      });
+      void reportImportantError(
         interaction.client,
         error,
-        "Conexión de voz de /hablar",
+        voiceUnavailable ? "Conexión de voz de /hablar" : "Inicio de Gemini Live en /hablar",
         interaction.guild.id,
       );
-      await interaction.editReply({
-        content:
-          "No pude completar la conexión con el servidor de voz de Discord después de dos intentos. " +
-          "Vuelve a probar en unos segundos o cambia de canal/región de voz. Si continúa ocurriendo solo en el hosting, revisa el estado o soporte de Discloud porque su red no está completando la conexión de voz.",
-      });
       return;
     }
     const embed = new EmbedBuilder()
