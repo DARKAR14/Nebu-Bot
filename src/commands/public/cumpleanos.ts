@@ -1,9 +1,13 @@
 import {
+  ActionRowBuilder,
   ChannelType,
   EmbedBuilder,
   MessageFlags,
+  ModalBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   type ChatInputCommandInteraction,
 } from "discord.js";
 import {
@@ -12,7 +16,7 @@ import {
   listBirthdaysForMonth,
   saveBirthday,
 } from "../../birthdays/store.js";
-import { updateGuildSettings } from "../../guild-settings/store.js";
+import { getGuildSettings, updateGuildSettings } from "../../guild-settings/store.js";
 import type { BotCommand, CommandContext } from "../types.js";
 
 const MONTH_NAMES = [
@@ -47,20 +51,6 @@ function isBirthdayAdmin(
     interaction.user.id === context.config.developerUserId ||
     interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)
   );
-}
-
-function parseColor(value: string | null): number | null {
-  const normalized = (value ?? "#190c05").trim();
-  if (!/^#[0-9a-f]{6}$/i.test(normalized)) return null;
-  return Number.parseInt(normalized.slice(1), 16);
-}
-
-function validImageUrl(value: string): boolean {
-  try {
-    return ["http:", "https:"].includes(new URL(value).protocol);
-  } catch {
-    return false;
-  }
 }
 
 export const cumpleanosCommand: BotCommand = {
@@ -101,19 +91,7 @@ export const cumpleanosCommand: BotCommand = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName("embed")
-        .setDescription("Configura el anuncio de cumpleaños (solo administradores).")
-        .addStringOption((option) =>
-          option.setName("titulo").setDescription("Título; admite {usuario}, {mencion} y {servidor}.").setMaxLength(256).setRequired(true),
-        )
-        .addStringOption((option) =>
-          option.setName("mensaje").setDescription("Mensaje; admite {usuario}, {mencion} y {servidor}.").setMaxLength(2000).setRequired(true),
-        )
-        .addStringOption((option) =>
-          option.setName("imagen").setDescription("URL HTTPS de la imagen grande.").setRequired(true),
-        )
-        .addStringOption((option) =>
-          option.setName("color").setDescription("Color hexadecimal, por ejemplo #190c05."),
-        ),
+        .setDescription("Abre el formulario del anuncio (solo administradores)."),
     ),
   async execute(
     interaction: ChatInputCommandInteraction,
@@ -213,34 +191,59 @@ export const cumpleanosCommand: BotCommand = {
       return;
     }
 
-    const title = interaction.options.getString("titulo", true);
-    const message = interaction.options.getString("mensaje", true);
-    const imageUrl = interaction.options.getString("imagen", true);
-    const color = parseColor(interaction.options.getString("color"));
-    if (!validImageUrl(imageUrl)) {
-      await interaction.reply({
-        content: "La imagen debe ser una URL válida que comience con `https://` o `http://`.",
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
+    const settings = await getGuildSettings(interaction.guild.id);
+    const configured = settings.birthdayEmbed;
+    const titleInput = new TextInputBuilder()
+      .setCustomId("title")
+      .setLabel("Título")
+      .setPlaceholder("🎂 ¡Feliz cumpleaños, {usuario}!")
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(256)
+      .setRequired(true);
+    const messageInput = new TextInputBuilder()
+      .setCustomId("message")
+      .setLabel("Mensaje")
+      .setPlaceholder("Hoy celebramos a {mencion}...")
+      .setStyle(TextInputStyle.Paragraph)
+      .setMaxLength(4000)
+      .setRequired(true);
+    const imageInput = new TextInputBuilder()
+      .setCustomId("image")
+      .setLabel("URL de la imagen")
+      .setPlaceholder("https://ejemplo.com/cumpleanos.png")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+    const colorInput = new TextInputBuilder()
+      .setCustomId("color")
+      .setLabel("Color hexadecimal")
+      .setPlaceholder("#190c05")
+      .setStyle(TextInputStyle.Short)
+      .setMinLength(7)
+      .setMaxLength(7)
+      .setRequired(true);
+
+    if (configured) {
+      titleInput.setValue(configured.title);
+      messageInput.setValue(configured.message);
+      imageInput.setValue(configured.imageUrl);
+      colorInput.setValue(`#${configured.color.toString(16).padStart(6, "0")}`);
+    } else {
+      titleInput.setValue("🎂 ¡Feliz cumpleaños, {usuario}!");
+      messageInput.setValue(
+        "Hoy celebramos a {mencion}. ¡Que este nuevo viaje alrededor del Sol venga lleno de momentos increíbles!",
+      );
+      colorInput.setValue("#190c05");
     }
-    if (color === null) {
-      await interaction.reply({
-        content: "El color debe tener el formato hexadecimal `#190c05`.",
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
-    await updateGuildSettings(interaction.guild.id, {
-      birthdayEmbed: { title, message, imageUrl, color },
-    });
-    const preview = new EmbedBuilder()
-      .setColor(color)
-      .setTitle(title.replaceAll("{usuario}", interaction.member.displayName).replaceAll("{mencion}", interaction.user.toString()).replaceAll("{servidor}", interaction.guild.name))
-      .setDescription(message.replaceAll("{usuario}", interaction.member.displayName).replaceAll("{mencion}", interaction.user.toString()).replaceAll("{servidor}", interaction.guild.name))
-      .setThumbnail(interaction.user.displayAvatarURL({ extension: "png", size: 256 }))
-      .setImage(imageUrl)
-      .setFooter({ text: "Vista previa del cumpleaños" });
-    await interaction.reply({ embeds: [preview], flags: MessageFlags.Ephemeral });
+
+    const modal = new ModalBuilder()
+      .setCustomId(`birthday-embed:${interaction.guild.id}:${interaction.user.id}`)
+      .setTitle(configured ? "Actualizar embed de cumpleaños" : "Crear embed de cumpleaños")
+      .addComponents(
+        new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(messageInput),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(imageInput),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(colorInput),
+      );
+    await interaction.showModal(modal);
   },
 };

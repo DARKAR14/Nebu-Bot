@@ -19,6 +19,7 @@ import { startBackupScheduler } from "./operations/backups.js";
 import { reportImportantError } from "./operations/errors.js";
 import { stopAllGeminiConversations } from "./voice/gemini-live.js";
 import { startBirthdayScheduler } from "./birthdays/scheduler.js";
+import { handleBirthdayInteraction } from "./birthdays/interactions.js";
 import {
   startHealthServer,
   startSelfPing,
@@ -63,6 +64,21 @@ client.on(Events.GuildCreate, async (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  try {
+    if (await handleBirthdayInteraction(interaction, config.developerUserId)) return;
+  } catch (error: unknown) {
+    await reportImportantError(client, error, "Configuración del embed de cumpleaños", interaction.guildId);
+    if (interaction.isRepliable()) {
+      const content = "No pude guardar el embed de cumpleaños. Inténtalo nuevamente.";
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({ content, flags: MessageFlags.Ephemeral }).catch(() => undefined);
+      } else {
+        await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => undefined);
+      }
+    }
+    return;
+  }
+
   try {
     if (await handleDesignerInteraction(interaction)) return;
   } catch (error: unknown) {
