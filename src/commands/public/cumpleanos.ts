@@ -1,7 +1,8 @@
 import {
-  ActionRowBuilder,
   ChannelType,
   EmbedBuilder,
+  FileUploadBuilder,
+  LabelBuilder,
   MessageFlags,
   ModalBuilder,
   PermissionFlagsBits,
@@ -195,27 +196,23 @@ export const cumpleanosCommand: BotCommand = {
     const configured = settings.birthdayEmbed;
     const titleInput = new TextInputBuilder()
       .setCustomId("title")
-      .setLabel("Título")
       .setPlaceholder("🎂 ¡Feliz cumpleaños, {usuario}!")
       .setStyle(TextInputStyle.Short)
       .setMaxLength(256)
       .setRequired(true);
     const messageInput = new TextInputBuilder()
       .setCustomId("message")
-      .setLabel("Mensaje")
       .setPlaceholder("Hoy celebramos a {mencion}...")
       .setStyle(TextInputStyle.Paragraph)
       .setMaxLength(4000)
       .setRequired(true);
-    const imageInput = new TextInputBuilder()
+    const imageUpload = new FileUploadBuilder()
       .setCustomId("image")
-      .setLabel("URL de la imagen")
-      .setPlaceholder("https://ejemplo.com/cumpleanos.png")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
+      .setMinValues(configured?.imageUrl ? 0 : 1)
+      .setMaxValues(1)
+      .setRequired(!configured?.imageUrl);
     const colorInput = new TextInputBuilder()
       .setCustomId("color")
-      .setLabel("Color hexadecimal")
       .setPlaceholder("#190c05")
       .setStyle(TextInputStyle.Short)
       .setMinLength(7)
@@ -225,7 +222,6 @@ export const cumpleanosCommand: BotCommand = {
     if (configured) {
       titleInput.setValue(configured.title);
       messageInput.setValue(configured.message);
-      imageInput.setValue(configured.imageUrl);
       colorInput.setValue(`#${configured.color.toString(16).padStart(6, "0")}`);
     } else {
       titleInput.setValue("🎂 ¡Feliz cumpleaños, {usuario}!");
@@ -238,11 +234,27 @@ export const cumpleanosCommand: BotCommand = {
     const modal = new ModalBuilder()
       .setCustomId(`birthday-embed:${interaction.guild.id}:${interaction.user.id}`)
       .setTitle(configured ? "Actualizar embed de cumpleaños" : "Crear embed de cumpleaños")
-      .addComponents(
-        new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput),
-        new ActionRowBuilder<TextInputBuilder>().addComponents(messageInput),
-        new ActionRowBuilder<TextInputBuilder>().addComponents(imageInput),
-        new ActionRowBuilder<TextInputBuilder>().addComponents(colorInput),
+      .addLabelComponents(
+        new LabelBuilder()
+          .setLabel("Título")
+          .setDescription("Puedes usar {usuario}, {mencion} y {servidor}.")
+          .setTextInputComponent(titleInput),
+        new LabelBuilder()
+          .setLabel("Mensaje")
+          .setDescription("Texto principal que aparecerá en el anuncio.")
+          .setTextInputComponent(messageInput),
+        new LabelBuilder()
+          .setLabel(configured?.imageUrl ? "Cambiar imagen (opcional)" : "Imagen del cumpleaños")
+          .setDescription(
+            configured?.imageUrl
+              ? "Deja este campo vacío para conservar la imagen actual."
+              : "Sube una imagen que aparecerá debajo del mensaje.",
+          )
+          .setFileUploadComponent(imageUpload),
+        new LabelBuilder()
+          .setLabel("Color hexadecimal")
+          .setDescription("Usa el formato #RRGGBB, por ejemplo #190c05.")
+          .setTextInputComponent(colorInput),
       );
     await interaction.showModal(modal);
   },

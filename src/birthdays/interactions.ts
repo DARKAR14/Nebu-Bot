@@ -5,20 +5,13 @@ import {
   type Interaction,
   type ModalSubmitInteraction,
 } from "discord.js";
-import { updateGuildSettings } from "../guild-settings/store.js";
+import { getGuildSettings, updateGuildSettings } from "../guild-settings/store.js";
+import { deleteBirthdayImage, uploadBirthdayImage } from "../media/cloudinary.js";
 
 function parseColor(value: string): number | null {
   const normalized = value.trim();
   if (!/^#[0-9a-f]{6}$/i.test(normalized)) return null;
   return Number.parseInt(normalized.slice(1), 16);
-}
-
-function validImageUrl(value: string): boolean {
-  try {
-    return ["http:", "https:"].includes(new URL(value).protocol);
-  } catch {
-    return false;
-  }
 }
 
 function replaceVariables(value: string, interaction: ModalSubmitInteraction<"cached">): string {
@@ -57,12 +50,20 @@ async function handleBirthdayEmbedModal(
 
   const title = interaction.fields.getTextInputValue("title").trim();
   const message = interaction.fields.getTextInputValue("message").trim();
-  const imageUrl = interaction.fields.getTextInputValue("image").trim();
   const colorText = interaction.fields.getTextInputValue("color").trim();
   const color = parseColor(colorText);
-  if (!validImageUrl(imageUrl)) {
+  const uploadedFile = interaction.fields.getUploadedFiles("image")?.first();
+  const previous = (await getGuildSettings(interaction.guild.id)).birthdayEmbed;
+  if (uploadedFile && !uploadedFile.contentType?.startsWith("image/")) {
     await interaction.reply({
-      content: "La imagen debe ser una URL válida que comience con `https://` o `http://`.",
+      content: "El archivo debe ser una imagen válida.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  if (!uploadedFile && !previous?.imageUrl) {
+    await interaction.reply({
+      content: "Debes subir una imagen para crear el embed.",
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -75,9 +76,38 @@ async function handleBirthdayEmbedModal(
     return;
   }
 
-  await updateGuildSettings(interaction.guild.id, {
-    birthdayEmbed: { title, message, imageUrl, color },
-  });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  let uploadedImage = null;
+  try {
+    uploadedImage = uploadedFile
+      ? await uploadBirthdayImage(uploadedFile.url, interaction.guild.id)
+      : null;
+  } catch (error: unknown) {
+    console.error("No se pudo subir la imagen de cumpleaños a Cloudinary:", error);
+    await interaction.editReply("No pude guardar la imagen en Cloudinary. Inténtalo nuevamente.");
+    return;
+  }
+  const imageUrl = uploadedImage?.secureUrl ?? previous!.imageUrl;
+  const imagePublicId = uploadedImage?.publicId ?? previous?.imagePublicId;
+  try {
+    await updateGuildSettings(interaction.guild.id, {
+      birthdayEmbed: {
+        title,
+        message,
+        imageUrl,
+        ...(imagePublicId ? { imagePublicId } : {}),
+        color,
+      },
+    });
+  } catch (error: unknown) {
+    if (uploadedImage) await deleteBirthdayImage(uploadedImage.publicId).catch(() => undefined);
+    throw error;
+  }
+  if (uploadedImage && previous?.imagePublicId) {
+    await deleteBirthdayImage(previous.imagePublicId).catch((error: unknown) => {
+      console.error("No se pudo eliminar la imagen anterior de cumpleaños:", error);
+    });
+  }
   const preview = new EmbedBuilder()
     .setColor(color)
     .setTitle(replaceVariables(title, interaction))
@@ -86,7 +116,7 @@ async function handleBirthdayEmbedModal(
     .setImage(imageUrl)
     .setFooter({ text: "Configuración guardada · Vista previa" })
     .setTimestamp();
-  await interaction.reply({ embeds: [preview], flags: MessageFlags.Ephemeral });
+  await interaction.editReply({ embeds: [preview] });
 }
 
 export async function handleBirthdayInteraction(

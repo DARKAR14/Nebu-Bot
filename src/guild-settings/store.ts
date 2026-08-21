@@ -11,6 +11,7 @@ export interface GuildSettings {
     title: string;
     message: string;
     imageUrl: string;
+    imagePublicId?: string;
     color: number;
   };
   lastBackupAt?: Date;

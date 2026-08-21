@@ -200,7 +200,7 @@ Un administrador con `Manage Server`, o el dueño configurado en `DEVELOPER_USER
 /cumpleanos embed
 ```
 
-`embed` abre un formulario para escribir el título, mensaje, URL de imagen y color. Si ya existe una configuración, el formulario aparece rellenado y al enviarlo actualiza el mismo diseño. El título y el mensaje admiten `{usuario}`, `{mencion}` y `{servidor}`. El bot comprueba cada minuto la fecha de `America/Bogota`, publica una sola vez por persona y día, incluye su avatar y la imagen configurada, y evita duplicados aunque el proceso se reinicie. Los cumpleaños del 29 de febrero se anuncian el 28 en años no bisiestos.
+`embed` abre el formulario moderno de Discord para escribir el título, mensaje y color, y subir directamente la imagen. La imagen se almacena en Cloudinary. Si ya existe una configuración, los textos aparecen rellenados y se puede conservar la imagen anterior o reemplazarla; al enviarlo actualiza el mismo diseño. El título y el mensaje admiten `{usuario}`, `{mencion}` y `{servidor}`. El bot comprueba cada minuto la fecha de `America/Bogota`, publica una sola vez por persona y día, incluye su avatar y la imagen configurada, y evita duplicados aunque el proceso se reinicie. Los cumpleaños del 29 de febrero se anuncian el 28 en años no bisiestos.
 
 Discord aplica la visibilidad al comando principal completo, no a cada subcomando. Por eso `channel` y `embed` pueden aparecer en el menú público, pero el bot rechaza su ejecución si la persona no tiene permisos administrativos.
 
