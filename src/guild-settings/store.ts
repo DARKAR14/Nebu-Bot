@@ -14,6 +14,12 @@ export interface GuildSettings {
     imagePublicId?: string;
     color: number;
   };
+  boostChannelId?: string;
+  boostEmbed?: {
+    title: string;
+    description: string;
+    imageUrl: string;
+  };
   lastBackupAt?: Date;
 }
 

@@ -1,5 +1,6 @@
 import type { BotCommand } from "../types.js";
 import { banCommand } from "./ban.js";
+import { boostCommand } from "./boost.js";
 import { automodCommand } from "./automod.js";
 import { clearCommand } from "./clear.js";
 import { casoCommand } from "./caso.js";
@@ -16,6 +17,7 @@ import { unmuteVoiceCommand } from "./unmute-voice.js";
 import { warnCommand } from "./warn.js";
 
 export const adminCommands: readonly BotCommand[] = [
+  boostCommand,
   configurarCommand,
   automodCommand,
   casoCommand,

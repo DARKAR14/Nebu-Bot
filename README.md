@@ -204,6 +204,20 @@ Un administrador con `Manage Server`, o el dueño configurado en `DEVELOPER_USER
 
 Discord aplica la visibilidad al comando principal completo, no a cada subcomando. Por eso `channel` y `embed` pueden aparecer en el menú público, pero el bot rechaza su ejecución si la persona no tiene permisos administrativos.
 
+## Anuncios de Server Boost
+
+El sistema completo es administrativo:
+
+```text
+/boost channel canal:#boosts
+/boost embed
+/boost test
+```
+
+`channel` guarda el canal de anuncios. `embed` abre un formulario con título, descripción y URL de imagen; si ya existe una configuración, vuelve a abrir el formulario con esos datos para actualizarlos. El diseño usa el color `#190c05`, muestra el avatar de quien dio el boost como thumbnail y admite `{usuario}`, `{mencion}`, `{servidor}` y `{boosts}`. `test` ofrece una vista previa privada usando al administrador como ejemplo, sin publicar un anuncio real.
+
+El bot detecta tanto el inicio del estado de booster como los mensajes del sistema para boosts adicionales, evitando anuncios dobles del mismo evento. Activa **Server Members Intent** en Discord Developer Portal, dentro de **Bot > Privileged Gateway Intents**; de lo contrario Discord no enviará todos los cambios de miembros y puede rechazar el inicio de sesión del bot.
+
 ## Conversación de voz con Gemini Live
 
 `/hablar conectar` une a Nebu al canal de voz normal donde se encuentra el usuario. El bot recibe el audio Opus de Discord, lo convierte a PCM de 16 bits/16 kHz para Gemini Live y reproduce en Discord la respuesta nativa de voz. El modelo predeterminado es `gemini-3.1-flash-live-preview` y la voz configurada es `Puck`, guiada para sonar masculina, juvenil y enérgica.

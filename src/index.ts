@@ -20,6 +20,8 @@ import { reportImportantError } from "./operations/errors.js";
 import { stopAllGeminiConversations } from "./voice/gemini-live.js";
 import { startBirthdayScheduler } from "./birthdays/scheduler.js";
 import { handleBirthdayInteraction } from "./birthdays/interactions.js";
+import { announceBoostMessage, announceNewBoost } from "./boosts/announcer.js";
+import { handleBoostInteraction } from "./boosts/interactions.js";
 import {
   startHealthServer,
   startSelfPing,
@@ -29,7 +31,12 @@ import {
 const config = loadConfig();
 const commands = createCommandCollection();
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildVoiceStates,
+  ],
 });
 let applicationReady = false;
 let healthServer: HealthServer | null = null;
@@ -63,6 +70,18 @@ client.on(Events.GuildCreate, async (guild) => {
   });
 });
 
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  await announceNewBoost(oldMember, newMember).catch((error: unknown) =>
+    reportImportantError(client, error, "Anuncio de Server Boost", newMember.guild.id),
+  );
+});
+
+client.on(Events.MessageCreate, async (message) => {
+  await announceBoostMessage(message).catch((error: unknown) =>
+    reportImportantError(client, error, "Mensaje de Server Boost", message.guildId),
+  );
+});
+
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (await handleBirthdayInteraction(interaction, config.developerUserId)) return;
@@ -93,6 +112,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction
           .reply({ content, flags: MessageFlags.Ephemeral })
           .catch(() => undefined);
+      }
+    }
+    return;
+  }
+
+  try {
+    if (await handleBoostInteraction(interaction, config.developerUserId)) return;
+  } catch (error: unknown) {
+    await reportImportantError(client, error, "Configuración del embed de boost", interaction.guildId);
+    if (interaction.isRepliable()) {
+      const content = "No pude guardar el embed de boost. Inténtalo nuevamente.";
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({ content, flags: MessageFlags.Ephemeral }).catch(() => undefined);
+      } else {
+        await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => undefined);
       }
     }
     return;
