@@ -4,16 +4,9 @@ import {
   type Interaction,
   type ModalSubmitInteraction,
 } from "discord.js";
-import { updateGuildSettings } from "../guild-settings/store.js";
+import { getGuildSettings, updateGuildSettings } from "../guild-settings/store.js";
+import { deleteBoostImage, uploadBoostImage } from "../media/cloudinary.js";
 import { buildBoostEmbed } from "./embed.js";
-
-function validImageUrl(value: string): boolean {
-  try {
-    return ["http:", "https:"].includes(new URL(value).protocol);
-  } catch {
-    return false;
-  }
-}
 
 async function handleBoostEmbedModal(
   interaction: ModalSubmitInteraction,
@@ -45,21 +38,58 @@ async function handleBoostEmbedModal(
 
   const title = interaction.fields.getTextInputValue("title").trim();
   const description = interaction.fields.getTextInputValue("description").trim();
-  const imageUrl = interaction.fields.getTextInputValue("image-url").trim();
-  if (!validImageUrl(imageUrl)) {
+  const uploadedFile = interaction.fields.getUploadedFiles("image")?.first();
+  const previous = (await getGuildSettings(interaction.guild.id)).boostEmbed;
+  if (!uploadedFile && !previous?.imageUrl) {
     await interaction.reply({
-      content: "La imagen debe ser una URL válida que comience con `https://` o `http://`.",
+      content: "Debes seleccionar una imagen para crear el embed.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  if (uploadedFile?.contentType && !uploadedFile.contentType.startsWith("image/")) {
+    await interaction.reply({
+      content: "El archivo seleccionado debe ser una imagen.",
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
-  const boostEmbed = { title, description, imageUrl };
-  await updateGuildSettings(interaction.guild.id, { boostEmbed });
-  await interaction.reply({
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  let uploadedImage = null;
+  try {
+    uploadedImage = uploadedFile
+      ? await uploadBoostImage(uploadedFile.url, interaction.guild.id)
+      : null;
+  } catch (error: unknown) {
+    console.error("No se pudo subir la imagen de boost a Cloudinary:", error);
+    await interaction.editReply("No pude guardar la imagen en Cloudinary. Inténtalo nuevamente.");
+    return;
+  }
+
+  const imageUrl = uploadedImage?.secureUrl ?? previous!.imageUrl;
+  const imagePublicId = uploadedImage?.publicId ?? previous?.imagePublicId;
+  const boostEmbed = {
+    title,
+    description,
+    imageUrl,
+    ...(imagePublicId ? { imagePublicId } : {}),
+  };
+  try {
+    await updateGuildSettings(interaction.guild.id, { boostEmbed });
+  } catch (error: unknown) {
+    if (uploadedImage) await deleteBoostImage(uploadedImage.publicId).catch(() => undefined);
+    throw error;
+  }
+  if (uploadedImage && previous?.imagePublicId) {
+    await deleteBoostImage(previous.imagePublicId).catch((error: unknown) => {
+      console.error("No se pudo eliminar la imagen anterior de boost:", error);
+    });
+  }
+
+  await interaction.editReply({
     content: "Configuración guardada. Esta es la vista previa:",
     embeds: [buildBoostEmbed(interaction.member, boostEmbed)],
-    flags: MessageFlags.Ephemeral,
   });
 }
 

@@ -88,6 +88,20 @@ export async function uploadBirthdayImage(
   return { secureUrl: result.secure_url, publicId: result.public_id };
 }
 
+export async function uploadBoostImage(
+  sourceUrl: string,
+  guildId: string,
+): Promise<StoredCloudinaryImage> {
+  const cloudinary = await getCloudinary();
+  const result = await cloudinary.uploader.upload(sourceUrl, {
+    resource_type: "image",
+    folder: `nebu-bot/boosts/${guildId}`,
+    public_id: `embed-${Date.now()}`,
+    overwrite: false,
+  });
+  return { secureUrl: result.secure_url, publicId: result.public_id };
+}
+
 export async function getCloudinaryStatus(): Promise<boolean> {
   const cloudinary = await getCloudinary();
   return cloudinary.api.ping().then(() => true).catch(() => false);
@@ -102,5 +116,9 @@ export async function deleteDesignerImage(publicId: string): Promise<void> {
 }
 
 export async function deleteBirthdayImage(publicId: string): Promise<void> {
+  await deleteDesignerImage(publicId);
+}
+
+export async function deleteBoostImage(publicId: string): Promise<void> {
   await deleteDesignerImage(publicId);
 }

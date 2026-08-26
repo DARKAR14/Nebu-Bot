@@ -1,5 +1,6 @@
 import {
   ChannelType,
+  FileUploadBuilder,
   LabelBuilder,
   MessageFlags,
   ModalBuilder,
@@ -96,12 +97,11 @@ export const boostCommand: BotCommand = {
       .setMaxLength(4000)
       .setRequired(true)
       .setValue(configured?.description ?? DEFAULT_BOOST_EMBED.description);
-    const imageUrlInput = new TextInputBuilder()
-      .setCustomId("image-url")
-      .setPlaceholder("https://ejemplo.com/boost.png")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
-    if (configured?.imageUrl) imageUrlInput.setValue(configured.imageUrl);
+    const imageUpload = new FileUploadBuilder()
+      .setCustomId("image")
+      .setMinValues(configured?.imageUrl ? 0 : 1)
+      .setMaxValues(1)
+      .setRequired(!configured?.imageUrl);
 
     const modal = new ModalBuilder()
       .setCustomId(`boost-embed:${interaction.guild.id}:${interaction.user.id}`)
@@ -116,9 +116,13 @@ export const boostCommand: BotCommand = {
           .setDescription("Mensaje principal para agradecer el boost.")
           .setTextInputComponent(descriptionInput),
         new LabelBuilder()
-          .setLabel("URL de la imagen")
-          .setDescription("Usa una dirección HTTPS directa o pública.")
-          .setTextInputComponent(imageUrlInput),
+          .setLabel(configured?.imageUrl ? "Cambiar imagen (opcional)" : "Imagen del boost")
+          .setDescription(
+            configured?.imageUrl
+              ? "Déjalo vacío para conservar la imagen actual."
+              : "Selecciona una imagen desde tu dispositivo.",
+          )
+          .setFileUploadComponent(imageUpload),
       );
     await interaction.showModal(modal);
   },

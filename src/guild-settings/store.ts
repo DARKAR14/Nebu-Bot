@@ -19,6 +19,7 @@ export interface GuildSettings {
     title: string;
     description: string;
     imageUrl: string;
+    imagePublicId?: string;
   };
   lastBackupAt?: Date;
 }

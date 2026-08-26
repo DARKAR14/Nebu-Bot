@@ -214,7 +214,7 @@ El sistema completo es administrativo:
 /boost test
 ```
 
-`channel` guarda el canal de anuncios. `embed` abre un formulario con título, descripción y URL de imagen; si ya existe una configuración, vuelve a abrir el formulario con esos datos para actualizarlos. El diseño usa el color `#190c05`, muestra el avatar de quien dio el boost como thumbnail y admite `{usuario}`, `{mencion}`, `{servidor}` y `{boosts}`. `test` ofrece una vista previa privada usando al administrador como ejemplo, sin publicar un anuncio real.
+`channel` guarda el canal de anuncios. `embed` abre un formulario con título, descripción y selector de archivo; Cloudinary guarda la imagen y MongoDB conserva su referencia. Si ya existe una configuración, carga los textos actuales y permite conservar la imagen o reemplazarla por otra. El diseño usa el color `#190c05`, muestra el avatar de quien dio el boost como thumbnail y admite `{usuario}`, `{mencion}`, `{servidor}` y `{boosts}`. `test` ofrece una vista previa privada usando al administrador como ejemplo, sin publicar un anuncio real.
 
 El bot detecta tanto el inicio del estado de booster como los mensajes del sistema para boosts adicionales, evitando anuncios dobles del mismo evento. Activa **Server Members Intent** en Discord Developer Portal, dentro de **Bot > Privileged Gateway Intents**; de lo contrario Discord no enviará todos los cambios de miembros y puede rechazar el inicio de sesión del bot.
 
