@@ -29,7 +29,7 @@ La cuenta indicada en `DEVELOPER_USER_ID` puede ejecutar las tres categorías, u
 
    - `DISCORD_TOKEN`: token del bot.
    - `DEVELOPER_USER_ID`: ID numérico de la única cuenta autorizada para comandos `dev`.
-   - `GEMINI_API_KEY`: clave de Google AI Studio; si se omite, solo `/hablar` queda deshabilitado.
+   - `GEMINI_API_KEY`: clave de Google AI Studio para `/hablar` y `/pregunta`.
    - `GEMINI_LIVE_MODEL`: modelo de voz; por defecto `gemini-3.1-flash-live-preview`.
    - `MONGODB_URI`: cadena de conexión de MongoDB.
    - `MONGODB_DB_NAME`: nombre de la base; por defecto `nebu_bot`.
@@ -235,6 +235,10 @@ Nebu interpreta a un ser cósmico que aparenta unos 12 años: curioso, amable y 
 La conversación desactiva las interrupciones automáticas: cuando una persona empieza a hablar mientras Nebu responde, el audio pendiente no se descarta. Una sola sesión puede estar activa por servidor y termina automáticamente a los 60 minutos por seguridad. El bot conserva el token de reanudación de Gemini, atiende las señales `GoAway` y reemplaza la conexión periódica sin abandonar el canal de Discord; también utiliza compresión de contexto. El audio se transmite temporalmente a Google y no se guarda en MongoDB, Cloudinary ni archivos locales; al conectarse, el bot publica este aviso en el canal de texto.
 
 El bot necesita `Connect` y `Speak` en el canal de voz. `GEMINI_API_KEY` permanece únicamente en el servidor de Render y nunca se envía a Discord. El uso está sujeto a la cuota y facturación configuradas en la cuenta de Gemini API.
+
+### Preguntas por texto
+
+Usa `/pregunta texto:¿Por qué brillan las estrellas?` para hablarle a Nebu por escrito. El comando envía la pregunta a Gemini y publica la respuesta de Nebu en el canal, con su tono costeño colombiano.
 
 ## Estado, backups y errores
 

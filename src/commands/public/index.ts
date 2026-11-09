@@ -7,6 +7,7 @@ import { portfolioEditCommand } from "./portfolio-edit.js";
 import { avatarCommand } from "./avatar.js";
 import { helpCommand } from "./help.js";
 import { hablarCommand } from "./hablar.js";
+import { preguntaCommand } from "./pregunta.js";
 import { serverinfoCommand } from "./serverinfo.js";
 import { userinfoCommand } from "./userinfo.js";
 import { cumpleanosCommand } from "./cumpleanos.js";
@@ -23,5 +24,6 @@ export const publicCommands: readonly BotCommand[] = [
   avatarCommand,
   helpCommand,
   hablarCommand,
+  preguntaCommand,
   cumpleanosCommand,
 ];
